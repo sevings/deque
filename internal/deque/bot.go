@@ -138,16 +138,23 @@ func (bot *Bot) LogError(err error, c tele.Context) {
 	}
 }
 
+func (bot *Bot) isAdmin(c tele.Context) (bool, error) {
+	senderID := c.Sender().ID
+	isAdmin := slices.Contains(bot.cfg.AdminIDs, senderID)
+	if !isAdmin {
+		_, err := bot.api.Send(c.Chat(), "Извините, у вас нет прав для использования этого бота.")
+		return false, err
+	}
+
+	return true, nil
+}
+
 func (bot *Bot) handleText(c tele.Context) error {
 	if !c.Chat().Private {
 		return nil
 	}
 
-	// Check if sender is admin
-	senderID := c.Sender().ID
-	isAdmin := slices.Contains(bot.cfg.AdminIDs, senderID)
-	if !isAdmin {
-		_, err := bot.api.Send(c.Chat(), "Извините, у вас нет прав для использования этого бота.")
+	if isAdmin, err := bot.isAdmin(c); !isAdmin {
 		return err
 	}
 
@@ -177,66 +184,25 @@ func (bot *Bot) AskQuestion(q Question) {
 }
 
 func (bot *Bot) handleHelp(c tele.Context) error {
-	// Check if sender is admin
-	senderID := c.Sender().ID
-	isAdmin := slices.Contains(bot.cfg.AdminIDs, senderID)
-	if !isAdmin {
-		_, err := bot.api.Send(c.Chat(), "Извините, у вас нет прав для использования этого бота.")
+	if isAdmin, err := bot.isAdmin(c); !isAdmin {
 		return err
 	}
 
-	helpText := `Инструкция по планированию вопросов:
-
-1. Каждый вопрос должен быть на отдельной строке
-2. Формат строки: [ДД.ММ] [ЧЧ:ММ] текст вопроса
-   - Дата и время опциональны
-   - Если дата не указана, вопрос будет запланирован на следующую свободную дату
-   - Если время не указано, будет использовано время по умолчанию
-
-Примеры:
-25.12 15:30 Какой подарок вы хотите на Новый год?
-10:00 Как у вас дела сегодня?
-Что вы думаете о погоде?`
-
+	helpText := bot.deque.GetHelp()
 	_, err := bot.api.Send(c.Chat(), helpText)
 	return err
 }
 
 func (bot *Bot) handleStats(c tele.Context) error {
-	// Check if sender is admin
-	senderID := c.Sender().ID
-	isAdmin := slices.Contains(bot.cfg.AdminIDs, senderID)
-	if !isAdmin {
-		_, err := bot.api.Send(c.Chat(), "Извините, у вас нет прав для использования этого бота.")
+	if isAdmin, err := bot.isAdmin(c); !isAdmin {
 		return err
 	}
 
-	stats, err := bot.db.LoadStats()
+	statsText, err := bot.deque.GetStats()
 	if err != nil {
 		bot.LogError(err, c)
 		_, err = bot.api.Send(c.Chat(), "Произошла ошибка при загрузке статистики.")
 		return err
-	}
-
-	statsText := fmt.Sprintf(`📊 Статистика вопросов:
-
-Всего вопросов: %d
-├ Прошедших: %d
-└ Предстоящих: %d`,
-		stats.TotalQuestions,
-		stats.PastQuestions,
-		stats.FutureQuestions)
-
-	if stats.FutureQuestions > 0 {
-		statsText += fmt.Sprintf(`
-
-Следующий вопрос:
-📅 %s
-❔ %s`,
-			stats.UpcomingQuestion.SendAt.Format("02.01.2006 15:04"),
-			stats.UpcomingQuestion.Content)
-	} else {
-		statsText += "\n\nНет запланированных вопросов."
 	}
 
 	_, err = bot.api.Send(c.Chat(), statsText)

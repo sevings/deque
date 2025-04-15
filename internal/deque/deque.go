@@ -134,3 +134,48 @@ func (d *Deque) ScheduleQuestions(text string) error {
 
 	return nil
 }
+
+func (d *Deque) GetHelp() string {
+	return `Инструкция по планированию вопросов:
+
+1. Каждый вопрос должен быть на отдельной строке
+2. Формат строки: [ДД.ММ] [ЧЧ:ММ] текст вопроса
+   - Дата и время опциональны
+   - Если дата не указана, вопрос будет запланирован на следующую свободную дату
+   - Если время не указано, будет использовано время по умолчанию
+
+Примеры:
+25.12 15:30 Какой подарок вы хотите на Новый год?
+10:00 Как у вас дела сегодня?
+Что вы думаете о погоде?`
+}
+
+func (d *Deque) GetStats() (string, error) {
+	stats, err := d.db.LoadStats()
+	if err != nil {
+		return "", err
+	}
+
+	statsText := fmt.Sprintf(`📊 Статистика вопросов:
+
+Всего вопросов: %d
+├ Прошедших: %d
+└ Предстоящих: %d`,
+		stats.TotalQuestions,
+		stats.PastQuestions,
+		stats.FutureQuestions)
+
+	if stats.FutureQuestions > 0 {
+		statsText += fmt.Sprintf(`
+
+Следующий вопрос:
+📅 %s
+❔ %s`,
+			stats.UpcomingQuestion.SendAt.Format("02.01.2006 15:04"),
+			stats.UpcomingQuestion.Content)
+	} else {
+		statsText += "\n\nНет запланированных вопросов."
+	}
+
+	return statsText, nil
+}

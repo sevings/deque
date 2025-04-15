@@ -170,13 +170,7 @@ func (bot *Bot) handleText(c tele.Context) error {
 	return err
 }
 
-func (bot *Bot) AskQuestion(q Question) {
-	text := bot.cfg.CommonText
-	if text != "" {
-		text += "\n\n"
-	}
-	text += q.Content
-
+func (bot *Bot) AskQuestion(text string) {
 	_, err := bot.api.Send(&tele.Chat{ID: bot.cfg.ChatID}, text)
 	if err != nil {
 		bot.LogError(err, nil)

@@ -15,7 +15,7 @@ type Config struct {
 	Release     bool
 	AdminIDs    []int64 `koanf:"admin_ids"`
 	MaxJobs     int     `koand:"max_jobs"`
-	CommonText  string  `koanf:"common_text"`
+	Format      string
 	Location    string
 	DefaultTime string `koanf:"default_time"`
 	ChatID      int64  `koanf:"chat_id"`

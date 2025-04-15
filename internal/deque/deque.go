@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-type AskFunc func(q Question)
+type AskFunc func(q string)
 
 type Deque struct {
 	db      *DB
@@ -32,7 +32,12 @@ func (d *Deque) SetAskFunc(fn AskFunc) {
 			// If we can't load the question, we can't do anything else
 			return
 		}
-		d.askFunc(question)
+
+		text := question.Content
+		if d.cfg.Format != "" {
+			text = fmt.Sprintf(d.cfg.Format, text)
+		}
+		d.askFunc(text)
 	})
 }
 

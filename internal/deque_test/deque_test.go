@@ -69,7 +69,7 @@ func setupTest(t *testing.T) (*deque.Deque, *deque.DB, *MockScheduler) {
 func TestDeque_ScheduleQuestions(t *testing.T) {
 	d, db, sched := setupTest(t)
 
-	d.SetAskFunc(func(q deque.Question) {})
+	d.SetAskFunc(func(q string) {})
 
 	// Test scheduling with different formats
 	input := `
@@ -102,8 +102,8 @@ func TestDeque_ScheduleQuestions(t *testing.T) {
 func TestDeque_AskFunction(t *testing.T) {
 	d, db, sched := setupTest(t)
 
-	var askedQuestion deque.Question
-	d.SetAskFunc(func(q deque.Question) {
+	var askedQuestion string
+	d.SetAskFunc(func(q string) {
 		askedQuestion = q
 	})
 
@@ -119,13 +119,13 @@ func TestDeque_AskFunction(t *testing.T) {
 	sched.ExecuteJob(deque.JobID(questions[0].ID))
 
 	// Verify the question was asked
-	require.Equal(t, questions[0].Content, askedQuestion.Content)
+	require.Contains(t, askedQuestion, questions[0].Content)
 	require.True(t, sched.WasExecuted(deque.JobID(questions[0].ID)))
 }
 
 func TestDeque_ScheduleWithInvalidDate(t *testing.T) {
 	d, _, _ := setupTest(t)
-	d.SetAskFunc(func(q deque.Question) {})
+	d.SetAskFunc(func(q string) {})
 
 	// Test with invalid date format
 	err := d.ScheduleQuestions("13.40 Invalid date")
@@ -134,7 +134,7 @@ func TestDeque_ScheduleWithInvalidDate(t *testing.T) {
 
 func TestDeque_NextEmptyDate(t *testing.T) {
 	d, db, _ := setupTest(t)
-	d.SetAskFunc(func(q deque.Question) {})
+	d.SetAskFunc(func(q string) {})
 
 	// Schedule a question for tomorrow
 	tomorrow := time.Now().AddDate(0, 0, 1)
@@ -155,7 +155,7 @@ func TestDeque_NextEmptyDate(t *testing.T) {
 
 func TestDeque_MultipleQuestionsOnSameDay(t *testing.T) {
 	d, db, _ := setupTest(t)
-	d.SetAskFunc(func(q deque.Question) {})
+	d.SetAskFunc(func(q string) {})
 
 	input := `
 		25.12 09:00 Morning
@@ -186,7 +186,7 @@ func TestDeque_Start(t *testing.T) {
 	require.Contains(t, err.Error(), "ask function not set")
 
 	// Set ask function
-	d.SetAskFunc(func(q deque.Question) {})
+	d.SetAskFunc(func(q string) {})
 
 	// Schedule some questions
 	input := `
@@ -216,7 +216,7 @@ func TestDeque_Start(t *testing.T) {
 
 func TestDeque_StartWithPastQuestions(t *testing.T) {
 	d, db, sched := setupTest(t)
-	d.SetAskFunc(func(q deque.Question) {})
+	d.SetAskFunc(func(q string) {})
 
 	now := time.Now()
 
@@ -254,7 +254,7 @@ func TestDeque_StartWithPastQuestions(t *testing.T) {
 
 func TestDeque_StartWithNoQuestions(t *testing.T) {
 	d, _, sched := setupTest(t)
-	d.SetAskFunc(func(q deque.Question) {})
+	d.SetAskFunc(func(q string) {})
 
 	// Start deque with no questions
 	err := d.Start()

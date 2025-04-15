@@ -139,6 +139,10 @@ func (bot *Bot) LogError(err error, c tele.Context) {
 }
 
 func (bot *Bot) handleText(c tele.Context) error {
+	if !c.Chat().Private {
+		return nil
+	}
+
 	// Check if sender is admin
 	senderID := c.Sender().ID
 	isAdmin := slices.Contains(bot.cfg.AdminIDs, senderID)

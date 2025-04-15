@@ -151,7 +151,7 @@ func (bot *Bot) isAdmin(c tele.Context) (bool, error) {
 }
 
 func (bot *Bot) handleText(c tele.Context) error {
-	if !c.Chat().Private {
+	if c.Chat().ID == bot.cfg.ChatID {
 		return nil
 	}
 
@@ -172,7 +172,7 @@ func (bot *Bot) handleText(c tele.Context) error {
 }
 
 func (bot *Bot) AskQuestion(text string) {
-	_, err := bot.api.Send(&tele.Chat{ID: bot.cfg.ChatID}, text)
+	_, err := bot.api.Send(&tele.Chat{ID: bot.cfg.ChatID}, text, tele.ModeMarkdown)
 	if err != nil {
 		bot.LogError(err, nil)
 	}

@@ -2,6 +2,9 @@
 package deque_test
 
 import (
+	"fmt"
+	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -262,4 +265,127 @@ func TestDeque_StartWithNoQuestions(t *testing.T) {
 
 	// Verify no jobs were scheduled
 	require.Len(t, sched.jobs, 0)
+}
+
+func TestDeque_GetStats(t *testing.T) {
+	d, db, _ := setupTest(t)
+	d.SetAskFunc(func(q string) {})
+
+	// Test with no questions
+	stats, err := d.GetStats()
+	require.NoError(t, err)
+	require.Contains(t, stats, "Всего вопросов: 0")
+	require.Contains(t, stats, "Нет запланированных вопросов")
+
+	// Add some questions
+	now := time.Now()
+	questions := []deque.Question{
+		{
+			SendAt:  now.AddDate(0, 0, -1), // yesterday
+			Content: "Past question",
+		},
+		{
+			SendAt:  now.AddDate(0, 0, 1), // tomorrow
+			Content: "Future question 1",
+		},
+		{
+			SendAt:  now.AddDate(0, 0, 2), // day after tomorrow
+			Content: "Future question 2",
+		},
+	}
+
+	for _, q := range questions {
+		_, err := db.AddQuestion(q)
+		require.NoError(t, err)
+	}
+
+	// Test stats with questions
+	stats, err = d.GetStats()
+	require.NoError(t, err)
+	require.Contains(t, stats, "Всего вопросов: 3")
+	require.Contains(t, stats, "Прошедших: 1")
+	require.Contains(t, stats, "Предстоящих: 2")
+	require.Contains(t, stats, "Future question 1") // Should contain next upcoming question
+}
+
+func TestDeque_GetFutureQuestions(t *testing.T) {
+	d, db, _ := setupTest(t)
+	d.SetAskFunc(func(q string) {})
+
+	// Test with no questions
+	blocks, err := d.GetFutureQuestions()
+	require.NoError(t, err)
+	require.Len(t, blocks, 1)
+	require.Contains(t, blocks[0], "Нет запланированных вопросов")
+
+	// Add more than 15 questions
+	now := time.Now()
+	timeStr := now.Format("15:04")
+	for i := 1; i <= 20; i++ {
+		q := deque.Question{
+			SendAt:  now.AddDate(0, 0, i), // i days in future
+			Content: fmt.Sprintf("Question %d", i),
+		}
+		_, err := db.AddQuestion(q)
+		require.NoError(t, err)
+	}
+
+	// Test with questions
+	blocks, err = d.GetFutureQuestions()
+	require.NoError(t, err)
+	require.Len(t, blocks, 2) // Should be split into 2 blocks
+
+	// First block should contain questions 1-15
+	require.Contains(t, blocks[0], "Вопросы 1-15 из 20")
+	require.Contains(t, blocks[0], "Question 1")
+	require.Contains(t, blocks[0], "Question 15")
+
+	// Second block should contain questions 16-20
+	require.Contains(t, blocks[1], "Вопросы 16-20 из 20")
+	require.Contains(t, blocks[1], "Question 16")
+	require.Contains(t, blocks[1], "Question 20")
+
+	// Test date format in output
+	dateFormat := now.AddDate(0, 0, 1).Format("02.01")
+	require.Contains(t, blocks[0], dateFormat)
+
+	// Test time format in output
+	require.Contains(t, blocks[0], timeStr) // Using actual time from questions
+
+	// Test ordering
+	// Extract all dates from first block and verify they're in order
+	lines := strings.Split(blocks[0], "\n")
+	var dates []time.Time
+	for _, line := range lines {
+		if strings.Contains(line, "Question") {
+			datePart := strings.Split(line, " ")[0] + " " + strings.Split(line, " ")[1]
+			date, err := time.Parse("02.01 15:04", datePart)
+			require.NoError(t, err)
+			dates = append(dates, date)
+		}
+	}
+	require.True(t, sort.SliceIsSorted(dates, func(i, j int) bool {
+		return dates[i].Before(dates[j])
+	}))
+}
+
+func TestDeque_GetFutureQuestions_ExactlyFifteen(t *testing.T) {
+	d, db, _ := setupTest(t)
+	d.SetAskFunc(func(q string) {})
+
+	// Add exactly 15 questions
+	now := time.Now()
+	for i := 1; i <= 15; i++ {
+		q := deque.Question{
+			SendAt:  now.AddDate(0, 0, i),
+			Content: fmt.Sprintf("Question %d", i),
+		}
+		_, err := db.AddQuestion(q)
+		require.NoError(t, err)
+	}
+
+	blocks, err := d.GetFutureQuestions()
+	require.NoError(t, err)
+	require.Len(t, blocks, 1)                         // Should be single block
+	require.NotContains(t, blocks[0], "Вопросы 1-15") // Should not have block header
 }

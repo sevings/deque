@@ -60,6 +60,7 @@ func (bot *Bot) Start(cfg Config, api BotAPI, deque *Deque) {
 	bot.api.Handle(tele.OnText, bot.handleText)
 	bot.api.Handle("/start", bot.handleHelp)
 	bot.api.Handle("/help", bot.handleHelp)
+	bot.api.Handle("/list", bot.handleList)
 	bot.api.Handle("/stat", bot.handleStats)
 
 	// Set up the ask function
@@ -185,6 +186,40 @@ func (bot *Bot) handleHelp(c tele.Context) error {
 	helpText := bot.deque.GetHelp()
 	_, err := bot.api.Send(c.Chat(), helpText)
 	return err
+}
+
+func (bot *Bot) handleList(c tele.Context) error {
+	if isAdmin, err := bot.isAdmin(c); !isAdmin {
+		return err
+	}
+
+	blocks, err := bot.deque.GetFutureQuestions()
+	if err != nil {
+		bot.LogError(err, c)
+		_, err = bot.api.Send(c.Chat(), "Произошла ошибка при загрузке списка вопросов.")
+		return err
+	}
+
+	// Send the first block immediately
+	if len(blocks) > 0 {
+		_, err = bot.api.Send(c.Chat(), blocks[0])
+		if err != nil {
+			bot.LogError(err, c)
+			return err
+		}
+	}
+
+	// Send remaining blocks with delay
+	for i := 1; i < len(blocks); i++ {
+		time.Sleep(500 * time.Millisecond) // Wait 500ms between messages
+		_, err = bot.api.Send(c.Chat(), blocks[i])
+		if err != nil {
+			bot.LogError(err, c)
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (bot *Bot) handleStats(c tele.Context) error {

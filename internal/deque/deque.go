@@ -2,6 +2,7 @@ package deque
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 )
@@ -183,4 +184,47 @@ func (d *Deque) GetStats() (string, error) {
 	}
 
 	return statsText, nil
+}
+
+// GetFutureQuestions returns future questions formatted as strings, split into blocks of 15
+func (d *Deque) GetFutureQuestions() ([]string, error) {
+	// Get future questions from DB
+	questions := d.db.LoadFutureQuestions()
+	if len(questions) == 0 {
+		return []string{"Нет запланированных вопросов."}, nil
+	}
+
+	// Sort questions by time
+	sort.Slice(questions, func(i, j int) bool {
+		return questions[i].SendAt.Before(questions[j].SendAt)
+	})
+
+	// Format each question
+	var formattedQuestions []string
+	for _, q := range questions {
+		formatted := fmt.Sprintf("%s %s",
+			q.SendAt.Format("02.01 15:04"),
+			q.Content)
+		formattedQuestions = append(formattedQuestions, formatted)
+	}
+
+	// Split into blocks of 15
+	const blockSize = 15
+	var blocks []string
+
+	for i := 0; i < len(formattedQuestions); i += blockSize {
+		end := i + blockSize
+		if end > len(formattedQuestions) {
+			end = len(formattedQuestions)
+		}
+
+		block := strings.Join(formattedQuestions[i:end], "\n")
+		if len(formattedQuestions) > blockSize {
+			block = fmt.Sprintf("Вопросы %d-%d из %d:\n\n%s",
+				i+1, end, len(formattedQuestions), block)
+		}
+		blocks = append(blocks, block)
+	}
+
+	return blocks, nil
 }

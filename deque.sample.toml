@@ -4,5 +4,6 @@ release = false
 admin_ids = 0
 max_jobs = 100
 common_text = "Вечерний вопрос. Можно ответить или пропустить.\n\n"
+location = "Europe/Moscow"
 default_time = "20:00"
 chat_id = 0

@@ -57,6 +57,10 @@ func (d *Deque) ScheduleQuestions(text string) error {
 	if err != nil {
 		return fmt.Errorf("invalid default time format: %w", err)
 	}
+	location, err := time.LoadLocation(d.cfg.Location)
+	if err != nil {
+		return fmt.Errorf("invalid location: %w", err)
+	}
 
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
@@ -81,10 +85,10 @@ func (d *Deque) ScheduleQuestions(text string) error {
 			if err == nil {
 				currentYear := time.Now().Year()
 				scheduledTime = time.Date(currentYear, date.Month(), date.Day(),
-					defaultTime.Hour(), defaultTime.Minute(), 0, 0, time.Local)
+					defaultTime.Hour(), defaultTime.Minute(), 0, 0, location)
 
 				// Only push to next year if the date is strictly before today
-				today := time.Now().Truncate(24 * time.Hour)
+				today := time.Now().In(location).Truncate(24 * time.Hour)
 				if scheduledTime.Before(today) {
 					scheduledTime = scheduledTime.AddDate(1, 0, 0)
 				}
@@ -92,26 +96,24 @@ func (d *Deque) ScheduleQuestions(text string) error {
 				hasDate = true
 				parts = parts[1:] // Remove the date part
 			}
-
+		}
+		if !hasDate {
+			scheduledTime = d.db.NextEmptyDate()
 		}
 
 		// Try to parse time (HH:MM)
 		hasTime := false
 		if len(parts) > 1 {
 			if t, err := time.Parse("15:04", parts[0]); err == nil {
-				if !hasDate {
-					scheduledTime = d.db.NextEmptyDate()
-				}
 				scheduledTime = time.Date(scheduledTime.Year(), scheduledTime.Month(),
-					scheduledTime.Day(), t.Hour(), t.Minute(), 0, 0, scheduledTime.Location())
+					scheduledTime.Day(), t.Hour(), t.Minute(), 0, 0, location)
 				hasTime = true
 				parts = parts[1:] // Remove the time part
 			}
 		}
-
-		// If neither date nor time was specified, use next empty date with default time
-		if !hasDate && !hasTime {
-			scheduledTime = d.db.NextEmptyDate()
+		if !hasTime {
+			scheduledTime = time.Date(scheduledTime.Year(), scheduledTime.Month(),
+				scheduledTime.Day(), defaultTime.Hour(), defaultTime.Minute(), 0, 0, location)
 		}
 
 		// The remaining parts form the content

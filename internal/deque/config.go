@@ -16,8 +16,9 @@ type Config struct {
 	AdminIDs    []int64 `koanf:"admin_ids"`
 	MaxJobs     int     `koand:"max_jobs"`
 	CommonText  string  `koanf:"common_text"`
-	DefaultTime string  `koanf:"default_time"`
-	ChatID      int64   `koanf:"chat_id"`
+	Location    string
+	DefaultTime string `koanf:"default_time"`
+	ChatID      int64  `koanf:"chat_id"`
 }
 
 func LoadConfig() (Config, error) {

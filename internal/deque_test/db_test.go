@@ -43,26 +43,51 @@ func TestLoadFutureQuestions(t *testing.T) {
 	require.True(t, ok)
 	require.NotNil(t, db)
 
-	futureTime := time.Now().Add(24 * time.Hour)
-	futureQuestion := deque.Question{
-		SendAt:  futureTime,
-		Content: "Future question",
+	pastTime := time.Now().Add(-24 * time.Hour)
+	pastQuestion := deque.Question{
+		SendAt:  pastTime,
+		Content: "Past question",
 	}
-	futureQuestion, err := db.AddQuestion(futureQuestion)
+	_, err := db.AddQuestion(pastQuestion)
+	require.NoError(t, err)
+
+	futureTime1 := time.Now().Add(24 * time.Hour)
+	futureQuestion1 := deque.Question{
+		SendAt:  futureTime1,
+		Content: "Future question 1",
+	}
+	_, err = db.AddQuestion(futureQuestion1)
+	require.NoError(t, err)
+
+	futureTime2 := time.Now().Add(48 * time.Hour)
+	futureQuestion2 := deque.Question{
+		SendAt:  futureTime2,
+		Content: "Future question 2",
+	}
+	_, err = db.AddQuestion(futureQuestion2)
 	require.NoError(t, err)
 
 	questions := db.LoadFutureQuestions()
+	require.Equal(t, 2, len(questions))
 
-	require.NotEmpty(t, questions)
-	require.Greater(t, len(questions), 0)
-	found := false
 	for _, q := range questions {
-		if q.Content == "Future question" {
-			found = true
-			require.WithinDuration(t, futureTime, q.SendAt, time.Second)
+		require.True(t, q.SendAt.After(time.Now()), "Only future questions should be returned")
+		require.NotEqual(t, pastQuestion.ID, q.ID, "Past question should not be included")
+	}
+
+	var foundQ1, foundQ2 bool
+	for _, q := range questions {
+		if q.Content == "Future question 1" {
+			foundQ1 = true
+			require.WithinDuration(t, futureTime1, q.SendAt, time.Second)
+		}
+		if q.Content == "Future question 2" {
+			foundQ2 = true
+			require.WithinDuration(t, futureTime2, q.SendAt, time.Second)
 		}
 	}
-	require.True(t, found)
+	require.True(t, foundQ1, "Future question 1 should be included")
+	require.True(t, foundQ2, "Future question 2 should be included")
 }
 
 func TestNextEmptyDate(t *testing.T) {
@@ -70,9 +95,63 @@ func TestNextEmptyDate(t *testing.T) {
 	require.True(t, ok)
 	require.NotNil(t, db)
 
-	nextDate := db.NextEmptyDate()
+	tomorrow := time.Now().AddDate(0, 0, 1)
+	tomorrow = time.Date(
+		tomorrow.Year(),
+		tomorrow.Month(),
+		tomorrow.Day(),
+		9, 0, 0, 0,
+		tomorrow.Location(),
+	)
 
+	nextDate := db.NextEmptyDate()
 	require.True(t, nextDate.After(time.Now()))
+	require.Equal(t, 9, nextDate.Hour())
+	require.Equal(t, 0, nextDate.Minute())
+	require.WithinDuration(t, tomorrow, nextDate, time.Second)
+
+	tomorrowQuestion := deque.Question{
+		SendAt:  tomorrow,
+		Content: "Tomorrow's question",
+	}
+	_, err := db.AddQuestion(tomorrowQuestion)
+	require.NoError(t, err)
+
+	nextDate = db.NextEmptyDate()
+	dayAfterTomorrow := tomorrow.AddDate(0, 0, 1)
+	require.WithinDuration(t, dayAfterTomorrow, nextDate, time.Second)
+	require.Equal(t, 9, nextDate.Hour())
+	require.Equal(t, 0, nextDate.Minute())
+
+	dayAfterTomorrowQuestion := deque.Question{
+		SendAt:  dayAfterTomorrow,
+		Content: "Day after tomorrow's question",
+	}
+	_, err = db.AddQuestion(dayAfterTomorrowQuestion)
+	require.NoError(t, err)
+
+	thirdDayQuestion := deque.Question{
+		SendAt:  dayAfterTomorrow.AddDate(0, 0, 1),
+		Content: "Third day's question",
+	}
+	_, err = db.AddQuestion(thirdDayQuestion)
+	require.NoError(t, err)
+
+	nextDate = db.NextEmptyDate()
+	expectedDate := dayAfterTomorrow.AddDate(0, 0, 2) // Fourth day
+	require.WithinDuration(t, expectedDate, nextDate, time.Second)
+	require.Equal(t, 9, nextDate.Hour())
+	require.Equal(t, 0, nextDate.Minute())
+
+	sixthDayQuestion := deque.Question{
+		SendAt:  dayAfterTomorrow.AddDate(0, 0, 4),
+		Content: "Sixth day's question",
+	}
+	_, err = db.AddQuestion(sixthDayQuestion)
+	require.NoError(t, err)
+
+	nextDate = db.NextEmptyDate()
+	require.WithinDuration(t, expectedDate, nextDate, time.Second)
 	require.Equal(t, 9, nextDate.Hour())
 	require.Equal(t, 0, nextDate.Minute())
 }
@@ -82,20 +161,89 @@ func TestLoadStats(t *testing.T) {
 	require.True(t, ok)
 	require.NotNil(t, db)
 
-	futureTime := time.Now().Add(24 * time.Hour)
-	question := deque.Question{
-		SendAt:  futureTime,
-		Content: "Stats test question",
+	// Case 1: Empty database
+	emptyStats, err := db.LoadStats()
+	require.NoError(t, err)
+	require.Equal(t, int64(0), emptyStats.TotalQuestions)
+	require.Equal(t, int64(0), emptyStats.FutureQuestions)
+	require.Equal(t, int64(0), emptyStats.PastQuestions)
+	require.Empty(t, emptyStats.UpcomingQuestion.Content)
+
+	// Case 2: Add multiple past questions
+	pastTime1 := time.Now().Add(-48 * time.Hour)
+	pastQuestion1 := deque.Question{
+		SendAt:  pastTime1,
+		Content: "Past question 1",
 	}
-	_, err := db.AddQuestion(question)
+	_, err = db.AddQuestion(pastQuestion1)
 	require.NoError(t, err)
 
+	pastTime2 := time.Now().Add(-24 * time.Hour)
+	pastQuestion2 := deque.Question{
+		SendAt:  pastTime2,
+		Content: "Past question 2",
+	}
+	_, err = db.AddQuestion(pastQuestion2)
+	require.NoError(t, err)
+
+	// Case 3: Add multiple future questions
+	futureTime1 := time.Now().Add(24 * time.Hour)
+	futureQuestion1 := deque.Question{
+		SendAt:  futureTime1,
+		Content: "Future question 1",
+	}
+	_, err = db.AddQuestion(futureQuestion1)
+	require.NoError(t, err)
+
+	futureTime2 := time.Now().Add(48 * time.Hour)
+	futureQuestion2 := deque.Question{
+		SendAt:  futureTime2,
+		Content: "Future question 2",
+	}
+	_, err = db.AddQuestion(futureQuestion2)
+	require.NoError(t, err)
+
+	futureTime3 := time.Now().Add(72 * time.Hour)
+	futureQuestion3 := deque.Question{
+		SendAt:  futureTime3,
+		Content: "Future question 3",
+	}
+	_, err = db.AddQuestion(futureQuestion3)
+	require.NoError(t, err)
+
+	// Now check stats with all questions added
 	stats, err := db.LoadStats()
-
 	require.NoError(t, err)
-	require.Greater(t, stats.TotalQuestions, int64(0))
-	require.Greater(t, stats.FutureQuestions, int64(0))
+
+	// Total should be sum of past and future
+	require.Equal(t, int64(5), stats.TotalQuestions, "Total questions should be 5")
+	require.Equal(t, int64(3), stats.FutureQuestions, "Future questions should be 3")
+	require.Equal(t, int64(2), stats.PastQuestions, "Past questions should be 2")
+
+	// Verify the upcoming question is the earliest future question
 	require.NotEmpty(t, stats.UpcomingQuestion)
+	require.Equal(t, "Future question 1", stats.UpcomingQuestion.Content)
+	require.WithinDuration(t, futureTime1, stats.UpcomingQuestion.SendAt, time.Second)
+
+	// Case 4: Add a question even closer to the current time
+	veryNearFutureTime := time.Now().Add(1 * time.Hour)
+	veryNearFutureQuestion := deque.Question{
+		SendAt:  veryNearFutureTime,
+		Content: "Very near future question",
+	}
+	_, err = db.AddQuestion(veryNearFutureQuestion)
+	require.NoError(t, err)
+
+	// Check that the upcoming question has changed
+	updatedStats, err := db.LoadStats()
+	require.NoError(t, err)
+	require.Equal(t, int64(6), updatedStats.TotalQuestions)
+	require.Equal(t, int64(4), updatedStats.FutureQuestions)
+	require.Equal(t, int64(2), updatedStats.PastQuestions)
+
+	// The upcoming question should now be the very near future question
+	require.Equal(t, "Very near future question", updatedStats.UpcomingQuestion.Content)
+	require.WithinDuration(t, veryNearFutureTime, updatedStats.UpcomingQuestion.SendAt, time.Second)
 }
 
 func TestDatabaseLoadFailure(t *testing.T) {

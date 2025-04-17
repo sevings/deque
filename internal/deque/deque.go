@@ -77,6 +77,11 @@ func (d *Deque) ScheduleQuestions(text string) error {
 		// Parse date and time if present
 		var scheduledTime time.Time
 		var content string
+		var hour, minute int
+
+		// Set default hour and minute
+		hour = defaultTime.Hour()
+		minute = defaultTime.Minute()
 
 		// Split the line into parts
 		parts := strings.SplitN(line, " ", 3)
@@ -91,7 +96,7 @@ func (d *Deque) ScheduleQuestions(text string) error {
 			if err == nil {
 				currentYear := time.Now().Year()
 				scheduledTime = time.Date(currentYear, date.Month(), date.Day(),
-					defaultTime.Hour(), defaultTime.Minute(), 0, 0, location)
+					hour, minute, 0, 0, location)
 
 				// Only push to next year if the date is strictly before today
 				today := time.Now().In(location).Truncate(24 * time.Hour)
@@ -103,29 +108,29 @@ func (d *Deque) ScheduleQuestions(text string) error {
 				parts = parts[1:] // Remove the date part
 			}
 		}
-		if !hasDate {
-			scheduledTime = d.db.NextEmptyDate()
-		}
 
 		// Try to parse time (HH:MM)
-		hasTime := false
 		if len(parts) > 1 {
 			if t, err := time.Parse("15:04", parts[0]); err == nil {
-				scheduledTime = time.Date(scheduledTime.Year(), scheduledTime.Month(),
-					scheduledTime.Day(), t.Hour(), t.Minute(), 0, 0, location)
-				hasTime = true
+				hour = t.Hour()
+				minute = t.Minute()
+
+				if hasDate {
+					// Update the time part of scheduledTime
+					scheduledTime = time.Date(scheduledTime.Year(), scheduledTime.Month(),
+						scheduledTime.Day(), hour, minute, 0, 0, location)
+				}
+
 				parts = parts[1:] // Remove the time part
 			}
 		}
-		if !hasTime {
-			scheduledTime = time.Date(scheduledTime.Year(), scheduledTime.Month(),
-				scheduledTime.Day(), defaultTime.Hour(), defaultTime.Minute(), 0, 0, location)
+
+		if !hasDate {
+			scheduledTime = d.db.NextEmptyDate(hour, minute, location)
 		}
 
-		// The remaining parts form the content
 		content = strings.Join(parts, " ")
 
-		// Create and save the question
 		question, err := d.db.AddQuestion(Question{
 			SendAt:  scheduledTime,
 			Content: content,
@@ -134,7 +139,6 @@ func (d *Deque) ScheduleQuestions(text string) error {
 			return fmt.Errorf("failed to add question: %w", err)
 		}
 
-		// Schedule the question
 		d.sched.Schedule(scheduledTime, JobID(question.ID))
 	}
 

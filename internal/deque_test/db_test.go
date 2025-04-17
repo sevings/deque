@@ -95,34 +95,82 @@ func TestNextEmptyDate(t *testing.T) {
 	require.True(t, ok)
 	require.NotNil(t, db)
 
-	tomorrow := time.Now().AddDate(0, 0, 1)
+	now := time.Now()
+	loc := now.Location()
+
+	// Test 1: Check if it returns today when time is in future
+	// Set scheduled time to be 2 hours in the future
+	futureHour := (now.Hour() + 2) % 24
+	futureMinute := 0
+
+	nextDate := db.NextEmptyDate(futureHour, futureMinute, loc)
+	require.Equal(t, now.Year(), nextDate.Year())
+	require.Equal(t, now.Month(), nextDate.Month())
+	require.Equal(t, now.Day(), nextDate.Day())
+	require.Equal(t, futureHour, nextDate.Hour())
+	require.Equal(t, futureMinute, nextDate.Minute())
+
+	// Test 2: Check if it returns tomorrow when time is in past
+	pastHour := (now.Hour() + 23) % 24 // Hour from yesterday at this time
+	pastMinute := 0
+
+	tomorrow := now.AddDate(0, 0, 1)
 	tomorrow = time.Date(
 		tomorrow.Year(),
 		tomorrow.Month(),
 		tomorrow.Day(),
-		9, 0, 0, 0,
+		pastHour, pastMinute, 0, 0,
 		tomorrow.Location(),
 	)
 
-	nextDate := db.NextEmptyDate()
-	require.True(t, nextDate.After(time.Now()))
-	require.Equal(t, 9, nextDate.Hour())
-	require.Equal(t, 0, nextDate.Minute())
+	nextDate = db.NextEmptyDate(pastHour, pastMinute, loc)
+	require.True(t, nextDate.After(now))
+	require.Equal(t, pastHour, nextDate.Hour())
+	require.Equal(t, pastMinute, nextDate.Minute())
 	require.WithinDuration(t, tomorrow, nextDate, time.Second)
 
-	tomorrowQuestion := deque.Question{
-		SendAt:  tomorrow,
-		Content: "Tomorrow's question",
+	// Test 3: Add a question for today's future time and verify next empty date is tomorrow
+	todayFutureTime := time.Date(
+		now.Year(),
+		now.Month(),
+		now.Day(),
+		futureHour, futureMinute, 0, 0,
+		now.Location(),
+	)
+
+	todayQuestion := deque.Question{
+		SendAt:  todayFutureTime,
+		Content: "Today's question",
 	}
-	_, err := db.AddQuestion(tomorrowQuestion)
+	_, err := db.AddQuestion(todayQuestion)
 	require.NoError(t, err)
 
-	nextDate = db.NextEmptyDate()
-	dayAfterTomorrow := tomorrow.AddDate(0, 0, 1)
-	require.WithinDuration(t, dayAfterTomorrow, nextDate, time.Second)
-	require.Equal(t, 9, nextDate.Hour())
-	require.Equal(t, 0, nextDate.Minute())
+	nextDate = db.NextEmptyDate(futureHour, futureMinute, loc)
+	expectedDate := now.AddDate(0, 0, 1)
+	expectedDate = time.Date(
+		expectedDate.Year(),
+		expectedDate.Month(),
+		expectedDate.Day(),
+		futureHour, futureMinute, 0, 0,
+		expectedDate.Location(),
+	)
+	require.WithinDuration(t, expectedDate, nextDate, time.Second)
 
+	// Test 4: Add a question for tomorrow and verify next empty date is day after tomorrow
+	tomorrowQuestion := deque.Question{
+		SendAt:  expectedDate,
+		Content: "Tomorrow's question",
+	}
+	_, err = db.AddQuestion(tomorrowQuestion)
+	require.NoError(t, err)
+
+	nextDate = db.NextEmptyDate(futureHour, futureMinute, loc)
+	dayAfterTomorrow := expectedDate.AddDate(0, 0, 1)
+	require.WithinDuration(t, dayAfterTomorrow, nextDate, time.Second)
+	require.Equal(t, futureHour, nextDate.Hour())
+	require.Equal(t, futureMinute, nextDate.Minute())
+
+	// Test 5: Add questions for multiple consecutive days and verify correct empty date
 	dayAfterTomorrowQuestion := deque.Question{
 		SendAt:  dayAfterTomorrow,
 		Content: "Day after tomorrow's question",
@@ -137,12 +185,13 @@ func TestNextEmptyDate(t *testing.T) {
 	_, err = db.AddQuestion(thirdDayQuestion)
 	require.NoError(t, err)
 
-	nextDate = db.NextEmptyDate()
-	expectedDate := dayAfterTomorrow.AddDate(0, 0, 2) // Fourth day
+	nextDate = db.NextEmptyDate(futureHour, futureMinute, loc)
+	expectedDate = dayAfterTomorrow.AddDate(0, 0, 2) // Fourth day
 	require.WithinDuration(t, expectedDate, nextDate, time.Second)
-	require.Equal(t, 9, nextDate.Hour())
-	require.Equal(t, 0, nextDate.Minute())
+	require.Equal(t, futureHour, nextDate.Hour())
+	require.Equal(t, futureMinute, nextDate.Minute())
 
+	// Test 6: Add a question for a day far in the future and verify it doesn't affect the result
 	sixthDayQuestion := deque.Question{
 		SendAt:  dayAfterTomorrow.AddDate(0, 0, 4),
 		Content: "Sixth day's question",
@@ -150,10 +199,10 @@ func TestNextEmptyDate(t *testing.T) {
 	_, err = db.AddQuestion(sixthDayQuestion)
 	require.NoError(t, err)
 
-	nextDate = db.NextEmptyDate()
+	nextDate = db.NextEmptyDate(futureHour, futureMinute, loc)
 	require.WithinDuration(t, expectedDate, nextDate, time.Second)
-	require.Equal(t, 9, nextDate.Hour())
-	require.Equal(t, 0, nextDate.Minute())
+	require.Equal(t, futureHour, nextDate.Hour())
+	require.Equal(t, futureMinute, nextDate.Minute())
 }
 
 func TestLoadStats(t *testing.T) {

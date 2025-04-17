@@ -94,6 +94,45 @@ func TestDeque_ScheduleQuestions(t *testing.T) {
 	questions := db.LoadFutureQuestions()
 	require.Len(t, questions, 4)
 
+	// Get specific questions to verify time handling
+	var dateOnlyQuestion, timeOnlyQuestion, plainQuestion, dateTimeQuestion *deque.Question
+
+	for i := range questions {
+		q := &questions[i]
+		if strings.Contains(q.Content, "Hello World") {
+			dateOnlyQuestion = q
+		} else if strings.Contains(q.Content, "Afternoon message") {
+			timeOnlyQuestion = q
+		} else if strings.Contains(q.Content, "Simple message") {
+			plainQuestion = q
+		} else if strings.Contains(q.Content, "Christmas morning") {
+			dateTimeQuestion = q
+		}
+	}
+
+	// Check if all question types were found
+	require.NotNil(t, dateOnlyQuestion, "Date-only question not found")
+	require.NotNil(t, timeOnlyQuestion, "Time-only question not found")
+	require.NotNil(t, plainQuestion, "Plain question not found")
+	require.NotNil(t, dateTimeQuestion, "Date-time question not found")
+
+	// Verify time formatting
+	// Date-only question should have default time (9:00)
+	require.Equal(t, 9, dateOnlyQuestion.SendAt.Hour())
+	require.Equal(t, 0, dateOnlyQuestion.SendAt.Minute())
+
+	// Time-only question should have specified time (15:00)
+	require.Equal(t, 15, timeOnlyQuestion.SendAt.Hour())
+	require.Equal(t, 0, timeOnlyQuestion.SendAt.Minute())
+
+	// Plain question should have default time
+	require.Equal(t, 9, plainQuestion.SendAt.Hour())
+	require.Equal(t, 0, plainQuestion.SendAt.Minute())
+
+	// Date-time question should have specified time (10:00)
+	require.Equal(t, 10, dateTimeQuestion.SendAt.Hour())
+	require.Equal(t, 0, dateTimeQuestion.SendAt.Minute())
+
 	require.Len(t, sched.jobs, 4)
 
 	// Verify scheduler was called for each question
@@ -147,7 +186,7 @@ func TestDeque_NextEmptyDate(t *testing.T) {
 	require.NoError(t, err)
 
 	// Get next empty date
-	nextEmpty := db.NextEmptyDate()
+	nextEmpty := db.NextEmptyDate(tomorrow.Hour(), tomorrow.Minute(), tomorrow.Location())
 
 	// Should be day after tomorrow
 	expected := tomorrow.AddDate(0, 0, 1)

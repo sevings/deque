@@ -91,16 +91,22 @@ func (db *DB) LoadFutureQuestions() []Question {
 }
 
 // NextEmptyDate finds the next available date that doesn't have a scheduled question
-func (db *DB) NextEmptyDate() time.Time {
-	// Start with tomorrow
-	proposedDate := time.Now().AddDate(0, 0, 1)
-	proposedDate = time.Date(
-		proposedDate.Year(),
-		proposedDate.Month(),
-		proposedDate.Day(),
-		9, 0, 0, 0, // Set to 9:00:00
-		proposedDate.Location(),
+func (db *DB) NextEmptyDate(hour, minute int, location *time.Location) time.Time {
+	now := time.Now()
+
+	// Start with today if the scheduled time is still in the future
+	proposedDate := time.Date(
+		now.Year(),
+		now.Month(),
+		now.Day(),
+		hour, minute, 0, 0,
+		location,
 	)
+
+	// Otherwise start with tomorrow
+	if proposedDate.Before(now) {
+		proposedDate = proposedDate.AddDate(0, 0, 1)
+	}
 
 	for {
 		var count int64
@@ -113,8 +119,15 @@ func (db *DB) NextEmptyDate() time.Time {
 			db.log.Errorw("failed to check date availability",
 				"error", result.Error,
 				"date", proposedDate)
-			// Return tomorrow in case of error
-			return time.Now().AddDate(0, 0, 1)
+			// Return tomorrow with specified time in case of error
+			tomorrow := now.AddDate(0, 0, 1)
+			return time.Date(
+				tomorrow.Year(),
+				tomorrow.Month(),
+				tomorrow.Day(),
+				hour, minute, 0, 0,
+				location,
+			)
 		}
 
 		// If no questions are scheduled for this date, return it

@@ -9,12 +9,20 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestAddAndRetrieveQuestion(t *testing.T) {
-	db, ok := deque.LoadDatabase(":memory:") // Use in-memory SQLite for testing
+func loadDatabase(t *testing.T) *deque.DB {
+	loc, err := time.LoadLocation("Europe/Moscow")
+	require.Nil(t, err)
+
+	db, ok := deque.LoadDatabase(":memory:", loc) // Use in-memory SQLite for testing
 	require.True(t, ok)
 	require.NotNil(t, db)
 
-	now := time.Now()
+	return db
+}
+
+func TestAddAndRetrieveQuestion(t *testing.T) {
+	db := loadDatabase(t)
+	now := db.Now()
 	question := deque.Question{
 		SendAt:  now,
 		Content: "Test question",
@@ -30,20 +38,16 @@ func TestAddAndRetrieveQuestion(t *testing.T) {
 }
 
 func TestGetNonExistentQuestion(t *testing.T) {
-	db, ok := deque.LoadDatabase(":memory:")
-	require.True(t, ok)
-	require.NotNil(t, db)
+	db := loadDatabase(t)
 
 	_, err := db.GetQuestionByID(9999)
 	require.ErrorIs(t, err, deque.ErrNotFound)
 }
 
 func TestLoadFutureQuestions(t *testing.T) {
-	db, ok := deque.LoadDatabase(":memory:")
-	require.True(t, ok)
-	require.NotNil(t, db)
+	db := loadDatabase(t)
 
-	pastTime := time.Now().Add(-24 * time.Hour)
+	pastTime := db.Now().Add(-24 * time.Hour)
 	pastQuestion := deque.Question{
 		SendAt:  pastTime,
 		Content: "Past question",
@@ -51,7 +55,7 @@ func TestLoadFutureQuestions(t *testing.T) {
 	_, err := db.AddQuestion(pastQuestion)
 	require.NoError(t, err)
 
-	futureTime1 := time.Now().Add(24 * time.Hour)
+	futureTime1 := db.Now().Add(24 * time.Hour)
 	futureQuestion1 := deque.Question{
 		SendAt:  futureTime1,
 		Content: "Future question 1",
@@ -59,7 +63,7 @@ func TestLoadFutureQuestions(t *testing.T) {
 	_, err = db.AddQuestion(futureQuestion1)
 	require.NoError(t, err)
 
-	futureTime2 := time.Now().Add(48 * time.Hour)
+	futureTime2 := db.Now().Add(48 * time.Hour)
 	futureQuestion2 := deque.Question{
 		SendAt:  futureTime2,
 		Content: "Future question 2",
@@ -71,7 +75,7 @@ func TestLoadFutureQuestions(t *testing.T) {
 	require.Equal(t, 2, len(questions))
 
 	for _, q := range questions {
-		require.True(t, q.SendAt.After(time.Now()), "Only future questions should be returned")
+		require.True(t, q.SendAt.After(db.Now()), "Only future questions should be returned")
 		require.NotEqual(t, pastQuestion.ID, q.ID, "Past question should not be included")
 	}
 
@@ -91,11 +95,9 @@ func TestLoadFutureQuestions(t *testing.T) {
 }
 
 func TestNextEmptyDate(t *testing.T) {
-	db, ok := deque.LoadDatabase(":memory:")
-	require.True(t, ok)
-	require.NotNil(t, db)
+	db := loadDatabase(t)
 
-	now := time.Now()
+	now := db.Now()
 	loc := now.Location()
 
 	// Test 1: Check if it returns today when time is in future
@@ -206,9 +208,7 @@ func TestNextEmptyDate(t *testing.T) {
 }
 
 func TestLoadStats(t *testing.T) {
-	db, ok := deque.LoadDatabase(":memory:")
-	require.True(t, ok)
-	require.NotNil(t, db)
+	db := loadDatabase(t)
 
 	// Case 1: Empty database
 	emptyStats, err := db.LoadStats()
@@ -219,7 +219,7 @@ func TestLoadStats(t *testing.T) {
 	require.Empty(t, emptyStats.UpcomingQuestion.Content)
 
 	// Case 2: Add multiple past questions
-	pastTime1 := time.Now().Add(-48 * time.Hour)
+	pastTime1 := db.Now().Add(-48 * time.Hour)
 	pastQuestion1 := deque.Question{
 		SendAt:  pastTime1,
 		Content: "Past question 1",
@@ -227,7 +227,7 @@ func TestLoadStats(t *testing.T) {
 	_, err = db.AddQuestion(pastQuestion1)
 	require.NoError(t, err)
 
-	pastTime2 := time.Now().Add(-24 * time.Hour)
+	pastTime2 := db.Now().Add(-24 * time.Hour)
 	pastQuestion2 := deque.Question{
 		SendAt:  pastTime2,
 		Content: "Past question 2",
@@ -236,7 +236,7 @@ func TestLoadStats(t *testing.T) {
 	require.NoError(t, err)
 
 	// Case 3: Add multiple future questions
-	futureTime1 := time.Now().Add(24 * time.Hour)
+	futureTime1 := db.Now().Add(24 * time.Hour)
 	futureQuestion1 := deque.Question{
 		SendAt:  futureTime1,
 		Content: "Future question 1",
@@ -244,7 +244,7 @@ func TestLoadStats(t *testing.T) {
 	_, err = db.AddQuestion(futureQuestion1)
 	require.NoError(t, err)
 
-	futureTime2 := time.Now().Add(48 * time.Hour)
+	futureTime2 := db.Now().Add(48 * time.Hour)
 	futureQuestion2 := deque.Question{
 		SendAt:  futureTime2,
 		Content: "Future question 2",
@@ -275,7 +275,7 @@ func TestLoadStats(t *testing.T) {
 	require.WithinDuration(t, futureTime1, stats.UpcomingQuestion.SendAt, time.Second)
 
 	// Case 4: Add a question even closer to the current time
-	veryNearFutureTime := time.Now().Add(1 * time.Hour)
+	veryNearFutureTime := db.Now().Add(1 * time.Hour)
 	veryNearFutureQuestion := deque.Question{
 		SendAt:  veryNearFutureTime,
 		Content: "Very near future question",
@@ -296,14 +296,13 @@ func TestLoadStats(t *testing.T) {
 }
 
 func TestDatabaseLoadFailure(t *testing.T) {
-	db, ok := deque.LoadDatabase("/invalid/path/that/doesnt/exist/database.db")
+	db, ok := deque.LoadDatabase("/invalid/path/that/doesnt/exist/database.db", time.UTC)
 	require.False(t, ok)
 	require.Nil(t, db)
 }
 
 func TestAddQuestionWithInvalidData(t *testing.T) {
-	db, ok := deque.LoadDatabase(":memory:")
-	require.True(t, ok)
+	db := loadDatabase(t)
 
 	question := deque.Question{
 		SendAt:  time.Time{},

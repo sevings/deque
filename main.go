@@ -31,7 +31,12 @@ func main() {
 	zap.RedirectStdLog(zapLogger)
 	logger := zapLogger.Sugar()
 
-	db, ok := deque.LoadDatabase(cfg.DBPath)
+	location, err := time.LoadLocation(cfg.Location)
+	if err != nil {
+		logger.Panicf("invalid location: %w", err)
+	}
+
+	db, ok := deque.LoadDatabase(cfg.DBPath, location)
 	if !ok {
 		logger.Panic("can't load database")
 	}
@@ -41,7 +46,6 @@ func main() {
 	defer msgSched.Stop()
 
 	deq := deque.NewDeque(db, cfg, msgSched)
-
 	bot := deque.NewBot(db)
 
 	pref := tele.Settings{

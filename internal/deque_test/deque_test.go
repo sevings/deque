@@ -56,11 +56,15 @@ func (s *MockScheduler) WasExecuted(id deque.JobID) bool {
 }
 
 func setupTest(t *testing.T) (*deque.Deque, *deque.DB, *MockScheduler) {
-	db, ok := deque.LoadDatabase(":memory:")
+	loc, err := time.LoadLocation("Europe/Moscow")
+	require.Nil(t, err)
+
+	db, ok := deque.LoadDatabase(":memory:", loc)
 	require.True(t, ok)
 
 	cfg := deque.Config{
 		DefaultTime: "09:00",
+		Location:    loc.String(),
 	}
 
 	sched := NewMockScheduler()
@@ -179,7 +183,7 @@ func TestDeque_NextEmptyDate(t *testing.T) {
 	d.SetAskFunc(func(q string) {})
 
 	// Schedule a question for tomorrow
-	tomorrow := time.Now().AddDate(0, 0, 1)
+	tomorrow := db.Now().AddDate(0, 0, 1)
 	tomorrow = time.Date(tomorrow.Year(), tomorrow.Month(), tomorrow.Day(), 9, 0, 0, 0, time.Local)
 
 	err := d.ScheduleQuestions(tomorrow.Format("02.01") + " Test question")
@@ -260,7 +264,7 @@ func TestDeque_StartWithPastQuestions(t *testing.T) {
 	d, db, sched := setupTest(t)
 	d.SetAskFunc(func(q string) {})
 
-	now := time.Now()
+	now := db.Now()
 
 	// Add a question in the past
 	pastQuestion := deque.Question{
@@ -317,7 +321,7 @@ func TestDeque_GetStats(t *testing.T) {
 	require.Contains(t, stats, "Нет запланированных вопросов")
 
 	// Add some questions
-	now := time.Now()
+	now := db.Now()
 	questions := []deque.Question{
 		{
 			SendAt:  now.AddDate(0, 0, -1), // yesterday
@@ -358,7 +362,7 @@ func TestDeque_GetFutureQuestions(t *testing.T) {
 	require.Contains(t, blocks[0], "Нет запланированных вопросов")
 
 	// Add more than 15 questions
-	now := time.Now()
+	now := db.Now()
 	timeStr := now.Format("15:04")
 	for i := 1; i <= 20; i++ {
 		q := deque.Question{
@@ -413,7 +417,7 @@ func TestDeque_GetFutureQuestions_ExactlyFifteen(t *testing.T) {
 	d.SetAskFunc(func(q string) {})
 
 	// Add exactly 15 questions
-	now := time.Now()
+	now := db.Now()
 	for i := 1; i <= 15; i++ {
 		q := deque.Question{
 			SendAt:  now.AddDate(0, 0, i),

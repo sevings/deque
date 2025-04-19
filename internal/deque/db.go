@@ -13,6 +13,7 @@ var ErrNotFound = fmt.Errorf("record not found")
 
 type DB struct {
 	db  *gorm.DB
+	loc *time.Location
 	log *zap.SugaredLogger
 }
 
@@ -29,7 +30,7 @@ type Stats struct {
 	UpcomingQuestion Question // Next scheduled question
 }
 
-func LoadDatabase(path string) (*DB, bool) {
+func LoadDatabase(path string, loc *time.Location) (*DB, bool) {
 	log := zap.L().Named("db").Sugar()
 	db, err := gorm.Open(sqlite.Open(path), &gorm.Config{})
 	if err != nil {
@@ -45,8 +46,13 @@ func LoadDatabase(path string) (*DB, bool) {
 
 	return &DB{
 		db:  db,
+		loc: loc,
 		log: log,
 	}, true
+}
+
+func (db *DB) Now() time.Time {
+	return time.Now().In(db.loc)
 }
 
 // AddQuestion adds a new question to the database and returns the saved question
@@ -81,7 +87,7 @@ func (db *DB) GetQuestionByID(id uint) (Question, error) {
 // LoadFutureQuestions retrieves all questions scheduled for future dates
 func (db *DB) LoadFutureQuestions() []Question {
 	var questions []Question
-	result := db.db.Where("send_at > ?", time.Now()).Find(&questions)
+	result := db.db.Where("send_at > ?", db.Now()).Find(&questions)
 	if result.Error != nil {
 		db.log.Errorw("failed to load future questions",
 			"error", result.Error)
@@ -152,7 +158,7 @@ func (db *DB) LoadStats() (Stats, error) {
 
 	// Get future questions count
 	result = db.db.Model(&Question{}).
-		Where("send_at > ?", time.Now()).
+		Where("send_at > ?", db.Now()).
 		Count(&stats.FutureQuestions)
 	if result.Error != nil {
 		return stats, result.Error
@@ -160,14 +166,14 @@ func (db *DB) LoadStats() (Stats, error) {
 
 	// Get past questions count
 	result = db.db.Model(&Question{}).
-		Where("send_at <= ?", time.Now()).
+		Where("send_at <= ?", db.Now()).
 		Count(&stats.PastQuestions)
 	if result.Error != nil {
 		return stats, result.Error
 	}
 
 	// Get next upcoming question
-	result = db.db.Where("send_at > ?", time.Now()).
+	result = db.db.Where("send_at > ?", db.Now()).
 		Order("send_at ASC").
 		First(&stats.UpcomingQuestion)
 	if result.Error != nil && result.Error != gorm.ErrRecordNotFound {

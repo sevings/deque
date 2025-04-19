@@ -62,6 +62,12 @@ func main() {
 	bot.Start(cfg, api, deq)
 	defer bot.Stop()
 
+	err = deq.Start()
+	if err != nil {
+		logger.Panic(err.Error())
+		return
+	}
+
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt)
 	<-quit

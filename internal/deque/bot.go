@@ -20,10 +20,10 @@ type Bot struct {
 }
 
 type BotAPI interface {
-	Send(to tele.Recipient, what interface{}, opts ...interface{}) (*tele.Message, error)
-	Edit(msg tele.Editable, what interface{}, opts ...interface{}) (*tele.Message, error)
+	Send(to tele.Recipient, what any, opts ...any) (*tele.Message, error)
+	Edit(msg tele.Editable, what any, opts ...any) (*tele.Message, error)
 	Delete(msg tele.Editable) error
-	Handle(endpoint interface{}, h tele.HandlerFunc, m ...tele.MiddlewareFunc)
+	Handle(endpoint any, h tele.HandlerFunc, m ...tele.MiddlewareFunc)
 	Use(middlewares ...tele.MiddlewareFunc)
 	Start()
 	Stop()

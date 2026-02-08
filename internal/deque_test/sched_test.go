@@ -101,7 +101,7 @@ func TestConcurrency(t *testing.T) {
 	s.Start()
 
 	var wg sync.WaitGroup
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		wg.Add(1)
 		go func(id deque.JobID) {
 			defer wg.Done()

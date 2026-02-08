@@ -311,3 +311,141 @@ func TestAddQuestionWithInvalidData(t *testing.T) {
 	question, err := db.AddQuestion(question)
 	require.NoError(t, err)
 }
+
+func TestDeleteQuestion(t *testing.T) {
+	db := loadDatabase(t)
+
+	// Add a question
+	now := db.Now()
+	question := deque.Question{
+		SendAt:  now.Add(24 * time.Hour),
+		Content: "Question to be deleted",
+	}
+	question, err := db.AddQuestion(question)
+	require.NoError(t, err)
+	require.NotZero(t, question.ID)
+
+	// Verify it exists
+	retrieved, err := db.GetQuestionByID(question.ID)
+	require.NoError(t, err)
+	require.Equal(t, question.Content, retrieved.Content)
+
+	// Delete the question
+	err = db.DeleteQuestion(question.ID)
+	require.NoError(t, err)
+
+	// Verify it no longer exists
+	_, err = db.GetQuestionByID(question.ID)
+	require.ErrorIs(t, err, deque.ErrNotFound)
+}
+
+func TestDeleteNonExistentQuestion(t *testing.T) {
+	db := loadDatabase(t)
+
+	// Try to delete a question that doesn't exist
+	err := db.DeleteQuestion(9999)
+	require.ErrorIs(t, err, deque.ErrNotFound)
+}
+
+func TestDeleteQuestionUpdatesStats(t *testing.T) {
+	db := loadDatabase(t)
+
+	// Add multiple questions
+	now := db.Now()
+	question1 := deque.Question{
+		SendAt:  now.Add(24 * time.Hour),
+		Content: "Question 1",
+	}
+	question1, err := db.AddQuestion(question1)
+	require.NoError(t, err)
+
+	question2 := deque.Question{
+		SendAt:  now.Add(48 * time.Hour),
+		Content: "Question 2",
+	}
+	question2, err = db.AddQuestion(question2)
+	require.NoError(t, err)
+
+	question3 := deque.Question{
+		SendAt:  now.Add(72 * time.Hour),
+		Content: "Question 3",
+	}
+	_, err = db.AddQuestion(question3)
+	require.NoError(t, err)
+
+	// Check stats before deletion
+	stats, err := db.LoadStats()
+	require.NoError(t, err)
+	require.Equal(t, int64(3), stats.TotalQuestions)
+	require.Equal(t, int64(3), stats.FutureQuestions)
+
+	// Delete question1
+	err = db.DeleteQuestion(question1.ID)
+	require.NoError(t, err)
+
+	// Check stats after deletion
+	stats, err = db.LoadStats()
+	require.NoError(t, err)
+	require.Equal(t, int64(2), stats.TotalQuestions)
+	require.Equal(t, int64(2), stats.FutureQuestions)
+
+	// Verify upcoming question is now question2
+	require.Equal(t, "Question 2", stats.UpcomingQuestion.Content)
+}
+
+func TestDeleteQuestionFromFutureQuestions(t *testing.T) {
+	db := loadDatabase(t)
+
+	// Add multiple future questions
+	now := db.Now()
+	question1 := deque.Question{
+		SendAt:  now.Add(24 * time.Hour),
+		Content: "Future question 1",
+	}
+	question1, err := db.AddQuestion(question1)
+	require.NoError(t, err)
+
+	question2 := deque.Question{
+		SendAt:  now.Add(48 * time.Hour),
+		Content: "Future question 2",
+	}
+	question2, err = db.AddQuestion(question2)
+	require.NoError(t, err)
+
+	question3 := deque.Question{
+		SendAt:  now.Add(72 * time.Hour),
+		Content: "Future question 3",
+	}
+	question3, err = db.AddQuestion(question3)
+	require.NoError(t, err)
+
+	// Load future questions
+	questions := db.LoadFutureQuestions()
+	require.Len(t, questions, 3)
+
+	// Delete question2
+	err = db.DeleteQuestion(question2.ID)
+	require.NoError(t, err)
+
+	// Load future questions again
+	questions = db.LoadFutureQuestions()
+	require.Len(t, questions, 2)
+
+	// Verify question2 is not in the list
+	for _, q := range questions {
+		require.NotEqual(t, question2.ID, q.ID)
+	}
+
+	// Verify question1 and question3 are still there
+	var found1, found3 bool
+	for _, q := range questions {
+		if q.ID == question1.ID {
+			found1 = true
+		}
+		if q.ID == question3.ID {
+			found3 = true
+		}
+	}
+	require.True(t, found1, "Question 1 should still be in the list")
+	require.True(t, found3, "Question 3 should still be in the list")
+}

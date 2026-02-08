@@ -356,7 +356,7 @@ func TestDeque_GetFutureQuestions(t *testing.T) {
 	d.SetAskFunc(func(q string) {})
 
 	// Test with no questions
-	blocks, err := d.GetFutureQuestions()
+	_, blocks, err := d.GetFutureQuestions(15)
 	require.NoError(t, err)
 	require.Len(t, blocks, 1)
 	require.Contains(t, blocks[0], "Нет запланированных вопросов")
@@ -374,7 +374,7 @@ func TestDeque_GetFutureQuestions(t *testing.T) {
 	}
 
 	// Test with questions
-	blocks, err = d.GetFutureQuestions()
+	_, blocks, err = d.GetFutureQuestions(15)
 	require.NoError(t, err)
 	require.Len(t, blocks, 2) // Should be split into 2 blocks
 
@@ -427,7 +427,7 @@ func TestDeque_GetFutureQuestions_ExactlyFifteen(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	blocks, err := d.GetFutureQuestions()
+	_, blocks, err := d.GetFutureQuestions(15)
 	require.NoError(t, err)
 	require.Len(t, blocks, 1)                         // Should be single block
 	require.NotContains(t, blocks[0], "Вопросы 1-15") // Should not have block header

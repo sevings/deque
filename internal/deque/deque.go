@@ -190,45 +190,54 @@ func (d *Deque) GetStats() (string, error) {
 	return statsText, nil
 }
 
-// GetFutureQuestions returns future questions formatted as strings, split into blocks of 15
-func (d *Deque) GetFutureQuestions() ([]string, error) {
-	// Get future questions from DB
+// GetFutureQuestions returns future questions formatted as strings, split into blocks
+func (d *Deque) GetFutureQuestions(blockSize int) ([][]Question, []string, error) {
 	questions := d.db.LoadFutureQuestions()
 	if len(questions) == 0 {
-		return []string{"Нет запланированных вопросов."}, nil
+		return nil, []string{"Нет запланированных вопросов."}, nil
 	}
 
-	// Sort questions by time
 	sort.Slice(questions, func(i, j int) bool {
 		return questions[i].SendAt.Before(questions[j].SendAt)
 	})
 
-	// Format each question
-	var formattedQuestions []string
-	for _, q := range questions {
-		formatted := fmt.Sprintf("%s %s",
-			q.SendAt.Format("02.01 15:04"),
-			q.Content)
-		formattedQuestions = append(formattedQuestions, formatted)
+	var blocks [][]Question
+	for i := 0; i < len(questions); i += blockSize {
+		end := min(i+blockSize, len(questions))
+		blocks = append(blocks, questions[i:end])
 	}
 
-	// Split into blocks of 15
-	const blockSize = 15
-	var blocks []string
-
-	for i := 0; i < len(formattedQuestions); i += blockSize {
-		end := i + blockSize
-		if end > len(formattedQuestions) {
-			end = len(formattedQuestions)
-		}
-
-		block := strings.Join(formattedQuestions[i:end], "\n")
-		if len(formattedQuestions) > blockSize {
-			block = fmt.Sprintf("Вопросы %d-%d из %d:\n\n%s",
-				i+1, end, len(formattedQuestions), block)
-		}
-		blocks = append(blocks, block)
+	var formattedBlocks []string
+	totalQuestions := 0
+	for _, block := range blocks {
+		totalQuestions += len(block)
 	}
 
-	return blocks, nil
+	currentIndex := 0
+	for _, block := range blocks {
+		var formattedQuestions []string
+		for _, q := range block {
+			formatted := fmt.Sprintf("%s %s",
+				q.SendAt.Format("02.01 15:04"),
+				q.Content)
+			formattedQuestions = append(formattedQuestions, formatted)
+		}
+
+		blockText := strings.Join(formattedQuestions, "\n")
+		if totalQuestions > blockSize {
+			blockText = fmt.Sprintf("Вопросы %d-%d из %d:\n\n%s",
+				currentIndex+1, currentIndex+len(block), totalQuestions, blockText)
+		}
+		formattedBlocks = append(formattedBlocks, blockText)
+		currentIndex += len(block)
+	}
+
+	return blocks, formattedBlocks, nil
+}
+
+// DeleteQuestion deletes a question by ID and cancels its scheduled job
+func (d *Deque) DeleteQuestion(id uint) error {
+	d.sched.Cancel(JobID(id))
+
+	return d.db.DeleteQuestion(id)
 }

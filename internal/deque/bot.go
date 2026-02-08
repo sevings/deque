@@ -21,6 +21,8 @@ type Bot struct {
 
 type BotAPI interface {
 	Send(to tele.Recipient, what interface{}, opts ...interface{}) (*tele.Message, error)
+	Edit(msg tele.Editable, what interface{}, opts ...interface{}) (*tele.Message, error)
+	Delete(msg tele.Editable) error
 	Handle(endpoint interface{}, h tele.HandlerFunc, m ...tele.MiddlewareFunc)
 	Use(middlewares ...tele.MiddlewareFunc)
 	Start()
@@ -62,6 +64,8 @@ func (bot *Bot) Start(cfg Config, api BotAPI, deque *Deque) {
 	bot.api.Handle("/help", bot.handleHelp)
 	bot.api.Handle("/list", bot.handleList)
 	bot.api.Handle("/stat", bot.handleStats)
+	bot.api.Handle("/delete", bot.handleDelete)
+	bot.api.Handle(tele.OnCallback, bot.handleCallback)
 
 	// Set up the ask function
 	bot.deque.SetAskFunc(bot.AskQuestion)
@@ -193,7 +197,7 @@ func (bot *Bot) handleList(c tele.Context) error {
 		return err
 	}
 
-	blocks, err := bot.deque.GetFutureQuestions()
+	_, blocks, err := bot.deque.GetFutureQuestions(15)
 	if err != nil {
 		bot.LogError(err, c)
 		_, err = bot.api.Send(c.Chat(), "Произошла ошибка при загрузке списка вопросов.")
@@ -235,5 +239,171 @@ func (bot *Bot) handleStats(c tele.Context) error {
 	}
 
 	_, err = bot.api.Send(c.Chat(), statsText)
+	return err
+}
+
+func (bot *Bot) handleDelete(c tele.Context) error {
+	if isAdmin, err := bot.isAdmin(c); !isAdmin {
+		return err
+	}
+
+	blocks, texts, err := bot.deque.GetFutureQuestions(10)
+	if err != nil {
+		bot.LogError(err, c)
+		_, err = bot.api.Send(c.Chat(), "Произошла ошибка при загрузке списка вопросов.")
+		return err
+	}
+	if len(blocks) == 0 {
+		_, err := bot.api.Send(c.Chat(), texts[0])
+		return err
+	}
+
+	// If there's only one question, skip the list and show confirmation immediately
+	if len(blocks) == 1 && len(blocks[0]) == 1 {
+		question := blocks[0][0]
+		return bot.sendDeleteConfirmation(c, question, false)
+	}
+
+	// Send the first block immediately
+	if len(blocks) > 0 {
+		err := bot.sendDeleteBlock(c, blocks[0], texts[0])
+		if err != nil {
+			return err
+		}
+	}
+
+	// Send remaining blocks with delay
+	for i := 1; i < len(blocks); i++ {
+		time.Sleep(500 * time.Millisecond)
+		err := bot.sendDeleteBlock(c, blocks[i], texts[i])
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (bot *Bot) sendDeleteBlock(c tele.Context, questions []Question, text string) error {
+	var buttons [][]tele.InlineButton
+	for _, q := range questions {
+		btn := tele.InlineButton{
+			Text: fmt.Sprintf("Удалить вопрос %s", q.SendAt.Format("02.01")),
+			Data: fmt.Sprintf("delete|%d", q.ID),
+		}
+		buttons = append(buttons, []tele.InlineButton{btn})
+	}
+
+	markup := &tele.ReplyMarkup{
+		InlineKeyboard: buttons,
+	}
+
+	_, err := bot.api.Send(c.Chat(), text, markup)
+	return err
+}
+
+func (bot *Bot) handleCallback(c tele.Context) error {
+	callback := c.Callback()
+	if callback == nil {
+		return nil
+	}
+
+	parts := strings.Split(callback.Data, "|")
+	action := parts[0]
+
+	switch action {
+	case "delete":
+		if len(parts) < 2 {
+			return nil
+		}
+		return bot.handleDeleteCallback(c, parts[1])
+	case "confirm":
+		if len(parts) < 2 {
+			return nil
+		}
+		return bot.handleConfirmCallback(c, parts[1])
+	case "cancel":
+		return bot.handleCancelCallback(c)
+	}
+
+	return nil
+}
+
+func (bot *Bot) sendDeleteConfirmation(c tele.Context, question Question, deleteListMessage bool) error {
+	if deleteListMessage {
+		err := bot.api.Delete(c.Message())
+		if err != nil {
+			bot.LogError(err, c)
+		}
+	}
+
+	confirmText := fmt.Sprintf("Удалить вопрос?\n\n%s\n%s",
+		question.SendAt.Format("02.01.2006 15:04"),
+		question.Content)
+
+	yesBtn := tele.InlineButton{
+		Text: "Да",
+		Data: fmt.Sprintf("confirm|%d", question.ID),
+	}
+	noBtn := tele.InlineButton{
+		Text: "Нет",
+		Data: "cancel",
+	}
+
+	markup := &tele.ReplyMarkup{
+		InlineKeyboard: [][]tele.InlineButton{{yesBtn, noBtn}},
+	}
+
+	_, err := bot.api.Send(c.Chat(), confirmText, markup)
+	return err
+}
+
+func (bot *Bot) handleDeleteCallback(c tele.Context, questionIDStr string) error {
+	var questionID uint
+	_, err := fmt.Sscanf(questionIDStr, "%d", &questionID)
+	if err != nil {
+		bot.LogError(err, c)
+		return c.Respond(&tele.CallbackResponse{
+			Text: "Ошибка при обработке запроса.",
+		})
+	}
+
+	question, err := bot.db.GetQuestionByID(questionID)
+	if err != nil {
+		bot.LogError(err, c)
+		return c.Respond(&tele.CallbackResponse{
+			Text: "Вопрос не найден.",
+		})
+	}
+
+	return bot.sendDeleteConfirmation(c, question, true)
+}
+
+func (bot *Bot) handleConfirmCallback(c tele.Context, questionIDStr string) error {
+	var questionID uint
+	_, err := fmt.Sscanf(questionIDStr, "%d", &questionID)
+	if err != nil {
+		bot.LogError(err, c)
+		return c.Respond(&tele.CallbackResponse{
+			Text: "Ошибка при обработке запроса.",
+		})
+	}
+
+	err = bot.deque.DeleteQuestion(questionID)
+	if err != nil {
+		bot.LogError(err, c)
+		updatedText := c.Message().Text + "\n\n❌ Ошибка при удалении вопроса."
+		_, editErr := bot.api.Edit(c.Message(), updatedText)
+		return editErr
+	}
+
+	updatedText := c.Message().Text + "\n\n✅ Вопрос успешно удален."
+	_, err = bot.api.Edit(c.Message(), updatedText)
+	return err
+}
+
+func (bot *Bot) handleCancelCallback(c tele.Context) error {
+	updatedText := c.Message().Text + "\n\n❌ Удаление отменено."
+	_, err := bot.api.Edit(c.Message(), updatedText)
 	return err
 }

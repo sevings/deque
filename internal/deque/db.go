@@ -182,3 +182,18 @@ func (db *DB) LoadStats() (Stats, error) {
 
 	return stats, nil
 }
+
+// DeleteQuestion deletes a question from the database
+func (db *DB) DeleteQuestion(id uint) error {
+	result := db.db.Delete(&Question{}, id)
+	if result.Error != nil {
+		db.log.Errorw("failed to delete question",
+			"error", result.Error,
+			"id", id)
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
